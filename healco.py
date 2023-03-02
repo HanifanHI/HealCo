@@ -15,7 +15,8 @@ import os
 import uuid
 from datetime import datetime, timedelta
 
-import pymysql
+from pymysql import OperationalError
+import time
 
 application = Flask(__name__)
 api = Api(application)
@@ -26,6 +27,7 @@ application.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:@127.0.0.1
 application.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 application.config['SQLALCHEMY_RECORD_QUERIES'] = True
 application.config['JWT_SECRET_KEY'] = 'apihealco'
+application.config['SQLALCHEMY_ENGINE_OPTIONS'] = {'pool_size': 100, 'pool_timeout': 20, 'pool_recycle': 20, 'pool_pre_ping': True}
 
 jwt = JWTManager(application)
 db = SQLAlchemy(application)
@@ -175,8 +177,12 @@ class Predict(Resource):
             db.session.commit()
             return make_response(jsonify({'status': '200', 'error': 'false', 'message': 'Berhasil melakukan prediksi', 'diagnosis': hasil_label, 'probability': hasil_prob, 'email': email, 'image': filename}))
 
-        except Exception as e:
+        except Exception  as e:
+            db.session.rollback()
             return make_response(jsonify({'status': '400', 'error': 'true', 'message': str(e), 'diagnosis': '', 'probability': '', 'email': '', 'image': ''}))
+        
+        finally:
+            db.session.close()
 
 # NOTE : DETAIL CORN DISEASE
 class Detail(Resource):
@@ -189,7 +195,10 @@ class Detail(Resource):
             else:
                 return make_response(jsonify({'status': '404', 'error': 'false', 'message': 'Penyakit tidak ditemukan'}))
         except Exception:
+            db.session.rollback()
             return make_response(jsonify({'status': '400', 'error': 'true', 'message': 'Tidak dapat melakukan request'}))
+        finally:
+            db.session.close()
 
 
 # NOTE : PREDICT HISTORY RESOURCE
@@ -208,8 +217,11 @@ class History(Resource):
                 return make_response(jsonify({'status': '200', 'error': 'false', 'data': output}))
             else:
                 return make_response(jsonify({'status': '404', 'error': 'false', 'message': 'Email tidak ditemukan'}))
-        except Exception:
-            return make_response(jsonify({'status': '400', 'error': 'true', 'message': 'Tidak dapat melakukan request'}))
+        except Exception as e:
+            db.session.rollback()
+            return make_response(jsonify({'status': '400', 'error': 'true', 'message': str(e)}))
+        finally:
+            db.session.close()
 
 # NOTE : DELETE HISTORY RESOURCE
 class DeleteHistory(Resource):
@@ -221,9 +233,11 @@ class DeleteHistory(Resource):
             db.session.delete(query)
             db.session.commit()
             return make_response(jsonify({'status': '200', 'error': 'false', 'message': 'Data berhasil dihapus'}))
-        except Exception:
-            return make_response(jsonify({'status': '400', 'error': 'true', 'message': 'Tidak dapat melakukan request'}))
-
+        except Exception as e:
+            db.session.rollback()
+            return make_response(jsonify({'status': '400', 'error': 'true', 'message': str(e)}))
+        finally:
+            db.session.close()
 
 # NOTE : TANGGAPAN RESOURCE
 class TanggapanResource(Resource):
